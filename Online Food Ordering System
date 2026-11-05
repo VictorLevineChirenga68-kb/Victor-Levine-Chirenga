@@ -1,0 +1,109 @@
+JOIN restaurants r ON o.restaurant_id = r.restaurant_id
+LEFT JOIN order_items oi ON o.order_id = oi.order_id
+GROUP BY o.order_id, c.full_name, r.restaurant_name,
+         o.order_date, o.order_status;
+
+SELECT * FROM order_summary;
+
+-- 7. INDEXES
+
+CREATE INDEX idx_customer_email
+ON customers(email);
+
+CREATE INDEX idx_order_customer
+ON orders(customer_id);
+
+CREATE INDEX idx_order_date
+ON orders(order_date);
+
+CREATE INDEX idx_menu_restaurant
+ON menu_items(restaurant_id);
+
+CREATE INDEX idx_orderitem_order
+ON order_items(order_id);
+
+-- 8. STORED PROCEDURE
+
+DELIMITER //
+
+CREATE PROCEDURE GetCustomerOrders(IN p_customer_id INT)
+BEGIN
+    SELECT
+        o.order_id,
+        r.restaurant_name,
+        o.order_date,
+        o.order_status,
+        o.total_amount
+    FROM orders o
+    JOIN restaurants r
+        ON o.restaurant_id = r.restaurant_id
+    WHERE o.customer_id = p_customer_id
+    ORDER BY o.order_date DESC;
+END //
+
+DELIMITER ;
+
+CALL GetCustomerOrders(1);
+
+-- 9. TRIGGER
+-- Recalculates the order total whenever an order item is inserted.
+
+DELIMITER //
+
+CREATE TRIGGER trg_after_order_item_insert
+AFTER INSERT ON order_items
+FOR EACH ROW
+BEGIN
+    UPDATE orders
+    SET total_amount = (
+        SELECT COALESCE(SUM(subtotal),0)
+        FROM order_items
+        WHERE order_id = NEW.order_id
+    )
+    WHERE order_id = NEW.order_id;
+END //
+
+DELIMITER ;
+
+-- 10. UPDATE ORDER STATUS
+
+UPDATE orders
+SET order_status = 'Delivered'
+WHERE order_id = 1;
+
+UPDATE deliveries
+SET delivery_status = 'Delivered',
+    delivered_at = NOW()
+WHERE order_id = 1;
+
+-- 11. TRANSACTION EXAMPLE
+
+START TRANSACTION;
+
+INSERT INTO orders
+(customer_id, restaurant_id, delivery_address)
+VALUES
+(4, 1, 'Zirakpur, Punjab');
+
+SET @new_order_id = LAST_INSERT_ID();
+
+INSERT INTO order_items
+(order_id, item_id, quantity, unit_price)
+VALUES
+(@new_order_id, 1, 1, 220.00),
+(@new_order_id, 2, 2, 60.00);
+
+UPDATE orders
+SET total_amount = (
+    SELECT SUM(subtotal)
+    FROM order_items
+    WHERE order_id = @new_order_id
+)
+WHERE order_id = @new_order_id;
+
+COMMIT;
+
+-- If an error occurs before COMMIT, use ROLLBACK;
+-- ROLLBACK;
+
+-- END OF PROJECT SQL
